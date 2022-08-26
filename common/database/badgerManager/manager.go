@@ -81,6 +81,40 @@ func (p *Manager) InsertData(dList []DataSet) error {
 	return err
 }
 
+func (p *Manager) LoadData(keyList [][]byte) ([]DataSet, error) {
+	err := p.checkDB()
+	if err != nil {
+		return nil, err
+	}
+	var res = make([]DataSet, 0)
+	err = p.internalDB.View(func(txn *badger.Txn) error {
+		for _, key := range keyList {
+			item, err := txn.Get(key)
+			if err != nil {
+				return err
+			}
+			if item == nil {
+				return errors.New("item nil")
+			}
+			key := item.KeyCopy(nil)
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			res = append(res, DataSet{
+				Key:   key,
+				Value: value,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
 func (p *Manager) DeleteData(keyList [][]byte) error {
 	err := p.checkDB()
 	if err != nil {
@@ -97,6 +131,12 @@ func (p *Manager) DeleteData(keyList [][]byte) error {
 	})
 	return err
 }
+
+/*
+It's byte-wise lexicographical sorting. We can probably clarify that in the README.
+
+https://golang.org/pkg/bytes/#Compare
+*/
 
 func (p *Manager) IterateData(loadFunc IterationFunc) error {
 	err := p.checkDB()
