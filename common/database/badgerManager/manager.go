@@ -21,6 +21,7 @@ type Manager struct {
 	internalDB *badger.DB
 	stopSignal chan int
 	stopOnce   sync.Once
+	initOnce   sync.Once
 }
 
 func NewBadgerManager(l logger.ILogger, dbPath string) *Manager {
@@ -30,6 +31,7 @@ func NewBadgerManager(l logger.ILogger, dbPath string) *Manager {
 		internalDB: nil,
 		stopSignal: make(chan int),
 		stopOnce:   sync.Once{},
+		initOnce:   sync.Once{},
 	}
 }
 
@@ -59,8 +61,10 @@ func (p *Manager) checkDB() error {
 }
 
 func (p *Manager) openDataBase() error {
-	var err error
-	p.internalDB, err = badger.Open(badger.DefaultOptions(p.dbPath))
+	var err = errors.New("open twice")
+	p.initOnce.Do(func() {
+		p.internalDB, err = badger.Open(badger.DefaultOptions(p.dbPath))
+	})
 	return err
 }
 
@@ -156,13 +160,17 @@ It's byte-wise lexicographical sorting. We can probably clarify that in the READ
 https://golang.org/pkg/bytes/#Compare
 */
 
-func (p *Manager) IterateData(loadFunc IterationFunc) error {
+func (p *Manager) IterateData(loadFunc IterationFunc, prefix []byte) error {
 	err := p.checkDB()
 	if err != nil {
 		return err
 	}
 	err = p.internalDB.View(func(txn *badger.Txn) error {
-		iter := txn.NewIterator(badger.DefaultIteratorOptions)
+		opt := badger.DefaultIteratorOptions
+		if prefix != nil && len(prefix) > 0 {
+			opt.Prefix = prefix
+		}
+		iter := txn.NewIterator(opt)
 		if iter == nil {
 			return errors.New("create iter failed")
 		}

@@ -3,10 +3,12 @@ package dataManager
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"github.com/dgraph-io/badger/v3"
 	"go.uber.org/zap"
 	"moonlighting/common/database/badgerManager"
 	"moonlighting/common/logger"
+	"regexp"
 	"sort"
 	"sync"
 )
@@ -22,9 +24,10 @@ type Data struct {
 	//PurchaseLink      string  `json:"purchaseLink"`
 	//SupportHotline    string  `json:"supportHotline"`
 	//DeclareDeadlineMs uint64  `json:"declareDeadlineMs"`
-	//InsertTimeMs      uint64  `json:"updateTimeMs"`
-	Value        map[string]string `json:"value"`
-	InsertTimeMs uint64            `json:"insertTimeMs"`
+	//Priority      uint64  `json:"updateTimeMs"`
+	Key      string            `json:"key"`
+	Value    map[string]string `json:"value"`
+	Priority uint64            `json:"priority"`
 }
 
 func init() {
@@ -54,7 +57,7 @@ func deSerializeData(buffer []byte) Data {
 
 type Manager struct {
 	logger                  logger.ILogger
-	dbPath                  string
+	prefix                  string
 	dbManager               *badgerManager.Manager
 	updateSortKeyListSignal chan int
 	sortKeyListLock         sync.RWMutex
@@ -63,8 +66,20 @@ type Manager struct {
 	stopOnce                sync.Once
 }
 
+func NewDataManager(l logger.ILogger, prefix string, dbManager *badgerManager.Manager) *Manager {
+	return &Manager{
+		logger:                  l,
+		prefix:                  prefix,
+		dbManager:               dbManager,
+		updateSortKeyListSignal: make(chan int, 50),
+		sortKeyListLock:         sync.RWMutex{},
+		sortKeyList:             make([]string, 0),
+		stopSignal:              make(chan int),
+		stopOnce:                sync.Once{},
+	}
+}
+
 func (p *Manager) Start() {
-	go p.dbManager.Start()
 	go p.loopMain()
 	//init sorted key list
 	p.updateSortKeyListSignal <- 1
@@ -79,7 +94,6 @@ func (p *Manager) Stop() {
 		default:
 
 		}
-		p.dbManager.Stop()
 		close(p.stopSignal)
 	})
 }
@@ -115,24 +129,24 @@ func (p *Manager) loopMain() {
 
 func (p *Manager) updateSortKeyList() {
 	type kuPair struct {
-		key          string
-		insertTimeMs uint64
+		key      string
+		priority uint64
 	}
 	kuPairList := make([]kuPair, 0)
 	err := p.dbManager.IterateData(func(key []byte, value []byte) {
 		kStr := string(key)
 		data := deSerializeData(value)
 		kuPairList = append(kuPairList, kuPair{
-			key:          kStr,
-			insertTimeMs: data.InsertTimeMs,
+			key:      kStr,
+			priority: data.Priority,
 		})
-	})
+	}, []byte(p.prefix))
 	if err != nil {
 		p.logger.Error("updateSortKeyList failed!", zap.Error(err))
 		return
 	}
 	sort.SliceStable(kuPairList, func(i, j int) bool {
-		return kuPairList[i].insertTimeMs > kuPairList[j].insertTimeMs
+		return kuPairList[i].priority > kuPairList[j].priority
 	})
 
 	tmp := make([]string, 0)
@@ -151,12 +165,15 @@ func (p *Manager) getSortKeyList() []string {
 	return sklCopy
 }
 
-func (p *Manager) InsertData(m map[string]Data) (err error) {
+func (p *Manager) InsertData(list []Data) (err error) {
 	dataList := make([]badgerManager.DataSet, 0)
-	for k, v := range m {
+	for _, data := range list {
+		if data.Key == "" {
+			return errors.New("contains empty key")
+		}
 		dataList = append(dataList, badgerManager.DataSet{
-			Key:   []byte(k),
-			Value: serializeData(v),
+			Key:   []byte(p.prefix + data.Key),
+			Value: serializeData(data),
 		})
 	}
 	defer func() {
@@ -170,7 +187,7 @@ func (p *Manager) InsertData(m map[string]Data) (err error) {
 func (p *Manager) DeleteData(k []string) (err error) {
 	keyList := make([][]byte, len(k))
 	for i := 0; i < len(keyList); i++ {
-		keyList[i] = []byte(k[i])
+		keyList[i] = []byte(p.prefix + k[i])
 	}
 	defer func() {
 		if err == nil {
@@ -180,41 +197,76 @@ func (p *Manager) DeleteData(k []string) (err error) {
 	return p.dbManager.DeleteData(keyList)
 }
 
-func (p *Manager) QueryData(limit int, page int, matchRule map[string]string) (map[string]Data, int, error) {
+func (p *Manager) QueryData(limit int, page int, matchRule map[string]string) (res []Data, count int, totalCount int, err error) {
 	skip := 0
 	if limit > 0 && page > 0 {
 		skip = limit * (page - 1)
 	}
-	count := 0
-	totalCount := 0
-	err := p.dbManager.ViewData(func(txn *badger.Txn) error {
-		for _, key := range p.getSortKeyList() {
+	count = 0
+	totalCount = 0
+	valueBuffer := make([]byte, 0)
+	res = make([]Data, 0)
+	err = p.dbManager.ViewData(func(txn *badger.Txn) error {
+		kList := p.getSortKeyList()
+		p.logger.Info("", zap.Any("kList", kList))
+		for _, key := range kList {
 			item, err := txn.Get([]byte(key))
 			if err != nil {
-				return err
+				if err == badger.ErrKeyNotFound {
+					continue
+				} else {
+					return err
+				}
 			}
 			if item == nil {
 				continue
 			}
 
+			valueBuffer, err = item.ValueCopy(valueBuffer)
+			if err != nil {
+				return err
+			}
+			data := deSerializeData(valueBuffer)
+			allMatch := true
+
 			if matchRule != nil && len(matchRule) > 0 {
-				err = item.Value(func(val []byte) error {
-					data := deSerializeData(val)
-					for k, v := range matchRule {
-						fieldVal, _ := data.Value[k]
-						regexp.
+				for k, v := range matchRule {
+					fieldVal, ok := data.Value[k]
+					if !ok {
+						allMatch = false
+						break
 					}
-					return nil
-				})
-				if err != nil {
-					return err
+					matched, err := regexp.MatchString(v, fieldVal)
+					if err != nil {
+						return err
+					}
+					if !matched {
+						allMatch = false
+						break
+					}
 				}
+			}
+
+			if allMatch {
+				totalCount += 1
+				if limit > 0 && page > 0 {
+					if totalCount > skip && count < limit {
+						count += 1
+						res = append(res, data)
+					}
+				} else {
+					count += 1
+					res = append(res, data)
+				}
+
 			}
 
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
+
+	return res, count, totalCount, nil
 }

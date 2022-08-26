@@ -47,7 +47,7 @@ func TestBadgerManager(t *testing.T) {
 
 	err = m.IterateData(func(key []byte, value []byte) {
 		t.Logf("key:%s value:%s \n", key, value)
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal("iterate data failed", err)
 	}
@@ -59,7 +59,7 @@ func TestBadgerManager(t *testing.T) {
 
 	err = m.IterateData(func(key []byte, value []byte) {
 		t.Logf("key:%s value:%s \n", key, value)
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal("iterate data failed", err)
 	}
@@ -72,7 +72,7 @@ func TestBadgerManager(t *testing.T) {
 		defer wg.Done()
 		err = m.IterateData(func(key []byte, value []byte) {
 			t.Logf("parallel key:%s value:%s \n", key, value)
-		})
+		}, nil)
 		if err != nil {
 			t.Error("iterate data failed", err)
 			return
@@ -84,7 +84,7 @@ func TestBadgerManager(t *testing.T) {
 
 		err = m.IterateData(func(key []byte, value []byte) {
 			t.Logf("parallel key:%s value:%s \n", key, value)
-		})
+		}, nil)
 		if err != nil {
 			t.Error("iterate data failed", err)
 			return
