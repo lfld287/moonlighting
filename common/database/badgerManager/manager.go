@@ -132,6 +132,24 @@ func (p *Manager) DeleteData(keyList [][]byte) error {
 	return err
 }
 
+func (p *Manager) ViewData(raw func(txn *badger.Txn) error) error {
+	err := p.checkDB()
+	if err != nil {
+		return err
+	}
+	err = p.internalDB.View(raw)
+	return err
+}
+
+func (p *Manager) UpdateData(raw func(txn *badger.Txn) error) error {
+	err := p.checkDB()
+	if err != nil {
+		return err
+	}
+	err = p.internalDB.Update(raw)
+	return err
+}
+
 /*
 It's byte-wise lexicographical sorting. We can probably clarify that in the README.
 

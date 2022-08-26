@@ -4,7 +4,7 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 */
 package main
 
-import "moonlighting/chengdu/cmd"
+import "moonlighting/communityServiceTradingCenter/cmd"
 
 func main() {
 	cmd.Execute()
