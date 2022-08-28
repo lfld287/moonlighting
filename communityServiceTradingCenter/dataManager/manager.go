@@ -197,7 +197,7 @@ func (p *Manager) DeleteData(k []string) (err error) {
 	return p.dbManager.DeleteData(keyList)
 }
 
-func (p *Manager) QueryData(limit int, page int, matchRule map[string]string) (res []Data, count int, totalCount int, err error) {
+func (p *Manager) QueryData(limit int, page int, matchRules []map[string]string) (res []Data, count int, totalCount int, err error) {
 	skip := 0
 	if limit > 0 && page > 0 {
 		skip = limit * (page - 1)
@@ -227,27 +227,47 @@ func (p *Manager) QueryData(limit int, page int, matchRule map[string]string) (r
 				return err
 			}
 			data := deSerializeData(valueBuffer)
-			allMatch := true
+			alreadyMatch := false
 
-			if matchRule != nil && len(matchRule) > 0 {
-				for k, v := range matchRule {
-					fieldVal, ok := data.Value[k]
-					if !ok {
-						allMatch = false
+			if matchRules != nil && len(matchRules) > 0 {
+				for _, matchRule := range matchRules {
+
+					if alreadyMatch {
 						break
 					}
-					matched, err := regexp.MatchString(v, fieldVal)
-					if err != nil {
-						return err
+
+					if matchRule == nil || len(matchRule) <= 0 {
+						continue
 					}
-					if !matched {
-						allMatch = false
-						break
+
+					currentRuleMatch := true
+
+					for k, v := range matchRule {
+						fieldVal, ok := data.Value[k]
+						if !ok {
+							currentRuleMatch = false
+							break
+						}
+						matched, err := regexp.MatchString(v, fieldVal)
+						if err != nil {
+							return err
+						}
+						if !matched {
+							currentRuleMatch = false
+							break
+						}
 					}
+
+					if currentRuleMatch {
+						alreadyMatch = true
+					}
+
 				}
+			} else {
+				alreadyMatch = true
 			}
 
-			if allMatch {
+			if alreadyMatch {
 				totalCount += 1
 				if limit > 0 && page > 0 {
 					if totalCount > skip && count < limit {

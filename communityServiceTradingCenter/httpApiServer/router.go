@@ -50,9 +50,9 @@ func (p *Server) routeV1Api(r *gin.RouterGroup) {
 	providerRoute := apiRoute.Group("/provider")
 	providerRoute.POST("/query", func(context *gin.Context) {
 		type localReq struct {
-			Limit      int               `json:"limit"`
-			Page       int               `json:"page"`
-			MatchRules map[string]string `json:"matchRules"`
+			Limit      int                 `json:"limit"`
+			Page       int                 `json:"page"`
+			MatchRules []map[string]string `json:"matchRules"`
 		}
 		var req localReq
 		err := context.BindJSON(&req)
@@ -122,9 +122,9 @@ func (p *Server) routeV1Api(r *gin.RouterGroup) {
 	publishRouter := apiRoute.Group("/publish")
 	publishRouter.POST("/query", func(context *gin.Context) {
 		type localReq struct {
-			Limit      int               `json:"limit"`
-			Page       int               `json:"page"`
-			MatchRules map[string]string `json:"matchRules"`
+			Limit      int                 `json:"limit"`
+			Page       int                 `json:"page"`
+			MatchRules []map[string]string `json:"matchRules"`
 		}
 		var req localReq
 		err := context.BindJSON(&req)
@@ -194,9 +194,9 @@ func (p *Server) routeV1Api(r *gin.RouterGroup) {
 	recommendRoute := apiRoute.Group("/recommend")
 	recommendRoute.POST("/query", func(context *gin.Context) {
 		type localReq struct {
-			Limit      int               `json:"limit"`
-			Page       int               `json:"page"`
-			MatchRules map[string]string `json:"matchRules"`
+			Limit      int                 `json:"limit"`
+			Page       int                 `json:"page"`
+			MatchRules []map[string]string `json:"matchRules"`
 		}
 		var req localReq
 		err := context.BindJSON(&req)

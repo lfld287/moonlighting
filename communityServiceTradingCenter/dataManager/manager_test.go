@@ -56,6 +56,6 @@ func TestManager(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, count, totalCount, err := testDataManager.QueryData(2, 1, map[string]string{})
+	res, count, totalCount, err := testDataManager.QueryData(2, 1, nil)
 	t.Log(res, count, totalCount, err)
 }
